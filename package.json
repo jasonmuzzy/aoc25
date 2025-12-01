@@ -1,0 +1,28 @@
+{
+  "name": "aoc25",
+  "version": "1.0.0",
+  "description": "Advent of Code 2025",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jasonmuzzy/aoc25.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/jasonmuzzy/aoc25/issues"
+  },
+  "homepage": "https://github.com/jasonmuzzy/aoc25#readme",
+  "dependencies": {
+    "aoc-copilot": "^1.7.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.2"
+  }
+}
