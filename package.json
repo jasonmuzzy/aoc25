@@ -21,8 +21,8 @@
     "aoc-copilot": "^1.7.9"
   },
   "devDependencies": {
-    "@types/node": "^22.13.9",
+    "@types/node": "^24.10.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.2"
+    "typescript": "^5.9.3"
   }
 }
