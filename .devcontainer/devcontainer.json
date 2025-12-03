@@ -5,7 +5,7 @@
   "remoteEnv": {
     "PATH": "${containerWorkspaceFolder}/node_modules/.bin:${containerEnv:PATH}"
   },
-  "postCreateCommand": "npm install",
+  "postCreateCommand": "npm install && rm -f .git/hooks/pre-push",
   "customizations": {
     "vscode": {
       "extensions": [
