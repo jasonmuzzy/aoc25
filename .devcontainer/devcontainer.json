@@ -13,6 +13,13 @@
         "esbenp.prettier-vscode",
         "ms-vscode.vscode-typescript-tslint-plugin"
       ]
+      ,
+      "settings": {
+        "editor.inlineSuggest.enabled": false,
+        "files.exclude": {
+          "**/.git": false
+        }
+      }
     }
   }
 }
