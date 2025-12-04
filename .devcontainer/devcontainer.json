@@ -2,6 +2,9 @@
 {
   "name": "Node.js & TypeScript",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+  "containerEnv": {
+    "TZ": "${localEnv:TZ}"
+  },
   "remoteEnv": {
     "PATH": "${containerWorkspaceFolder}/node_modules/.bin:${containerEnv:PATH}"
   },
