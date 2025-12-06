@@ -3,10 +3,11 @@
   "name": "Node.js & TypeScript",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
   "containerEnv": {
-    "TZ": "${localEnv:TZ}"
+    "TZ": "${localEnv:TZ:America/New_York}"
   },
   "remoteEnv": {
-    "PATH": "${containerWorkspaceFolder}/node_modules/.bin:${containerEnv:PATH}"
+    "PATH": "${containerWorkspaceFolder}/node_modules/.bin:${containerEnv:PATH}",
+    "TZ": "${containerEnv:TZ}"
   },
   "postCreateCommand": "npm install && rm -f .git/hooks/pre-push",
   "customizations": {
