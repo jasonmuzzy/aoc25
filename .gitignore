@@ -1,3 +1,6 @@
+# Input Files
+[0-9]*inputs.txt
+
 # Logs
 logs
 *.log

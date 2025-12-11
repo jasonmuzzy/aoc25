@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Point Visualization</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #1e1e1e;
+            color: #fff;
+            font-family: monospace;
+        }
+
+        canvas {
+            border: 1px solid #444;
+            background-color: #000;
+        }
+
+        #info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #2d2d2d;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>Connected Points Visualization</h2>
+    <canvas id="canvas" width="1920" height="1080"></canvas>
+    <div id="info">Loading...</div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const info = document.getElementById('info');
+
+        async function loadAndVisualize() {
+            try {
+                // Read the input file
+                const response = await fetch('09inputs.txt');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const text = await response.text();
+                const lines = text.trim().split('\n');
+
+                // Parse points
+                const points = lines.map(line => {
+                    const [x, y] = line.split(',').map(Number);
+                    return { x, y };
+                });
+
+                // Find bounds
+                const xs = points.map(p => p.x);
+                const ys = points.map(p => p.y);
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+
+                info.innerHTML = `Points: ${points.length}<br>
+                    X range: ${minX} - ${maxX}<br>
+                    Y range: ${minY} - ${maxY}`;
+
+                // Scale to fit canvas with padding
+                const padding = 40;
+                const scaleX = (canvas.width - 2 * padding) / (maxX - minX);
+                const scaleY = (canvas.height - 2 * padding) / (maxY - minY);
+                const scale = Math.min(scaleX, scaleY);
+
+                function toCanvas(p) {
+                    return {
+                        x: (p.x - minX) * scale + padding,
+                        y: (p.y - minY) * scale + padding
+                    };
+                }
+
+                // Build neighbor maps
+                const byX = new Map(); // Map from x coord to points with that x
+                const byY = new Map(); // Map from y coord to points with that y
+
+                points.forEach(p => {
+                    if (!byX.has(p.x)) byX.set(p.x, []);
+                    byX.get(p.x).push(p);
+
+                    if (!byY.has(p.y)) byY.set(p.y, []);
+                    byY.get(p.y).push(p);
+                });
+
+                // Draw connections
+                ctx.strokeStyle = '#0088ff';
+                ctx.lineWidth = 1;
+
+                const connections = new Set();
+
+                points.forEach(p => {
+                    // Find neighbor with same x (different y)
+                    const sameX = byX.get(p.x).filter(other => other !== p);
+                    if (sameX.length > 0) {
+                        // Find closest neighbor
+                        const neighbor = sameX.reduce((closest, other) => {
+                            const distOther = Math.abs(other.y - p.y);
+                            const distClosest = Math.abs(closest.y - p.y);
+                            return distOther < distClosest ? other : closest;
+                        });
+
+                        const key = `${Math.min(p.x, neighbor.x)},${Math.min(p.y, neighbor.y)}-${Math.max(p.x, neighbor.x)},${Math.max(p.y, neighbor.y)}`;
+                        if (!connections.has(key)) {
+                            connections.add(key);
+                            const p1 = toCanvas(p);
+                            const p2 = toCanvas(neighbor);
+                            ctx.beginPath();
+                            ctx.moveTo(p1.x, p1.y);
+                            ctx.lineTo(p2.x, p2.y);
+                            ctx.stroke();
+                        }
+                    }
+
+                    // Find neighbor with same y (different x)
+                    const sameY = byY.get(p.y).filter(other => other !== p);
+                    if (sameY.length > 0) {
+                        // Find closest neighbor
+                        const neighbor = sameY.reduce((closest, other) => {
+                            const distOther = Math.abs(other.x - p.x);
+                            const distClosest = Math.abs(closest.x - p.x);
+                            return distOther < distClosest ? other : closest;
+                        });
+
+                        const key = `${Math.min(p.x, neighbor.x)},${Math.min(p.y, neighbor.y)}-${Math.max(p.x, neighbor.x)},${Math.max(p.y, neighbor.y)}`;
+                        if (!connections.has(key)) {
+                            connections.add(key);
+                            const p1 = toCanvas(p);
+                            const p2 = toCanvas(neighbor);
+                            ctx.beginPath();
+                            ctx.moveTo(p1.x, p1.y);
+                            ctx.lineTo(p2.x, p2.y);
+                            ctx.stroke();
+                        }
+                    }
+                });
+
+                // Draw points
+                ctx.fillStyle = '#ff4444';
+                points.forEach(p => {
+                    const cp = toCanvas(p);
+                    ctx.beginPath();
+                    ctx.arc(cp.x, cp.y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+
+                // Draw areas
+                ctx.strokeStyle = '#3bb143';
+
+                // Floor
+                let p1 = toCanvas({ x: 94817, y: 50191 });
+                p2 = toCanvas({ x: 94817, y: 68749 });
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+
+                p1 = p2;
+                p2 = toCanvas({ x: 5786, y: 68749 });
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+
+                p1 = p2;
+                p2 = toCanvas({ x: 5786, y: 50191 });
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+
+                p1 = p2;
+                p2 = toCanvas({ x: 94817, y: 50191 });
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+
+                info.innerHTML += `<br>Connections drawn: ${connections.size}`;
+
+            } catch (error) {
+                info.innerHTML = `Error: ${error.message}`;
+                console.error(error);
+            }
+        }
+
+        loadAndVisualize();
+    </script>
+</body>
+
+</html>
