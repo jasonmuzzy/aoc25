@@ -7,36 +7,35 @@ async function solve(
     additionalInfo?: { [key: string]: string } // Additional info for some puzzles with multiple examples
 ): Promise<number | bigint | string> {
 
-    const devices = new Map(inputs.map(input => [input.substring(0, 3), input.substring(5).split(' ')]));
-    const paths: Set<string> = new Set();
-    const stops: { [key: string]: boolean } = {};
-    const start = part === 1 ? 'you' : 'svr';
-    for (let [device, neighbors] of devices.entries()) {
-        stops[device] = false;
-        for (let neighbor of neighbors) {
-            stops[neighbor] = false;
-        }
+    const graph = new Map(inputs.map(input => [input.substring(0, 3), new Set(input.substring(5).split(' '))]));
+
+    if (part === 1) {
+        return dp(graph, 'you', 'out');
+    } else {
+        let route1 = dp(graph, 'svr', 'dac');
+        route1 *= dp(graph, 'dac', 'fft');
+        route1 *= dp(graph, 'fft', 'out');
+
+        let route2 = dp(graph, 'svr', 'fft');
+        route2 *= dp(graph, 'fft', 'dac');
+        route2 *= dp(graph, 'dac', 'out');
+
+        return route1 + route2;
     }
 
-    down(start, devices, stops, start, paths, part);
-
-    function down(device: string, devices: Map<string, string[]>, stops: { [key: string]: boolean }, path: string, paths: Set<string>, part: number) {
-        if (device === 'out') {
-            if (part === 1 || (stops['dac'] && stops['fft'])) {
-                paths.add(`${path} ${device}`);
-            }
-        } else {
-            if (!stops[device]) {
-                stops[device] = true;
-                for (let neighbor of devices.get(device) ?? []) {
-                    down(neighbor, devices, stops, `${path} ${device}`, paths, part);
-                }
-                stops[device] = false;
-            }
+    function dp(graph: Map<string, Set<string>>, start: string, end: string) {
+        const memo: Map<string, number> = new Map();
+        function dfs(current: string): number {
+            if (current === end) return 1;
+            const memoVal = memo.get(current);
+            if (memoVal !== undefined) return memoVal;
+            const total = [...graph.get(current) ?? []].reduce((t, c) => t + dfs(c), 0);
+            memo.set(current, total);
+            return total;
         }
+        return dfs(start);
     }
 
-    return paths.size;
 }
 
-run(__filename, solve, { forceSubmit: true });
+run(__filename, solve);
