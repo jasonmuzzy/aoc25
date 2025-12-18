@@ -18,7 +18,8 @@
   },
   "homepage": "https://github.com/jasonmuzzy/aoc25#readme",
   "dependencies": {
-    "aoc-copilot": "^1.7.11"
+    "aoc-copilot": "^1.7.11",
+    "yalps": "^0.6.3"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
