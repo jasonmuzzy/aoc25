@@ -38,23 +38,48 @@ async function solve(
         }
     };
 
-    for (const [i, region] of regions.entries()) {
-        console.log(`${i} of ${regions.length}`);
+    for (const region of regions) {
+
         const [x, y, ...presentCounts] = region.match(/\d+/g)?.map(Number) ?? [0, 0];
+
         const underTheTree = Array.from({ length: y }, () => '.'.repeat(x).split(''));
+        const minTreeArea = 3 * Math.floor(y / 3) * 3 * Math.floor(x / 3);
+        const maxTreeArea = x * y;
+
         const thePresents: Present[] = [];
+        let minPresentArea = 0, maxPresentArea = 0;
         presentCounts.forEach((count, id) => {
-            for (let n = 0; n < count; n++) {
-                thePresents.push({ id: (n + 1) * 10 + id, shape: presents[id].shape });
+            if (count > 0) {
+                minPresentArea += count * presents[id].shape
+                    .reduce((area, present) => area + (present.match(/#/g)?.length ?? 0), 0);
+                maxPresentArea += count * 9; // All presents 3x3
+                for (let n = 0; n < count; n++) {
+                    thePresents.push({ id: (n + 1) * 10 + id, shape: presents[id].shape });
+                }
             }
         });
-        const fits = tryToFit(thePresents, underTheTree);
-        if (fits) {
+
+        if (minPresentArea > maxTreeArea) {
+            // Edge case 1: Only consider the occupied area of each present and compare that to the
+            // total area under the tree. If there's not enough room then no amount of packing will
+            // be able to fit the presents.
+        } else if (maxPresentArea <= minTreeArea) {
+            // Edge case 2: Each present is 3x3 so takes up a maximum area of 9. If the total space
+            // under the tree (rounding width/height each down to greatest multiple of 3) meets or
+            // exceeds it then we know there's enough room.
+
+            // Note: I added this optimization after solving the puzzle and checking Reddit. Turns out
+            // that all of the actual inputs fit one of these two edge cases, but the examples require
+            // packing.
             answer++;
-            console.log('Fits');
         } else {
-            console.log('Doesn\'t fit');
+            // No shortcuts available - do the packing and see what fits.
+            const fits = tryToFit(thePresents, underTheTree);
+            if (fits) {
+                answer++;
+            }
         }
+
     }
 
     return answer;
@@ -63,16 +88,6 @@ async function solve(
 function tryToFit(thePresents: Present[], underTheTree: string[][]) {
 
     const pieces = thePresents.map(({ id, shape }) => shapeToPiece(shape, id, underTheTree)).sort((a, b) => a.placements.length - b.placements.length);
-
-    const presentArea = pieces.reduce((pv, cv) => pv + cv.area, 0);
-    const treeArea = underTheTree.length * underTheTree[0].length;
-
-    // Shortcut: if the total area of the presents exceeds the total area under the tree then it
-    // doesn't matter how we arrange them, they'll never all fit.
-    if (presentArea > treeArea) {
-        console.log('Short cut!');
-        return false;
-    }
 
     function placeNext(pieceIndex: number): boolean {
         return pieces[pieceIndex].placements.some(placement => {
