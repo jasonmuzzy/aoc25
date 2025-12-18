@@ -19,7 +19,7 @@
 
         canvas {
             border: 1px solid #444;
-            background-color: #000;
+            background-color: #000000;
         }
 
         #info {
@@ -41,6 +41,13 @@
         const ctx = canvas.getContext('2d');
         const info = document.getElementById('info');
 
+        // Zoom and pan state
+        let zoom = 1;
+        let panX = 0;
+        let panY = 0;
+        let isPanning = false;
+        let startX, startY;
+
         async function loadAndVisualize() {
             try {
                 // Read the input file
@@ -49,25 +56,72 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const text = await response.text();
-                const lines = text.trim().split('\n');
+                const inputs = text.trim().split('\n');
 
-                // Parse points
-                const points = lines.map(line => {
+                const points = inputs.map(line => {
                     const [x, y] = line.split(',').map(Number);
                     return { x, y };
                 });
 
-                // Find bounds
-                const xs = points.map(p => p.x);
-                const ys = points.map(p => p.y);
-                const minX = Math.min(...xs);
-                const maxX = Math.max(...xs);
-                const minY = Math.min(...ys);
-                const maxY = Math.max(...ys);
+                // Each point is followed by another point on the same row or column, forming walls
+                const walls = points
+                    .map(({ x: x1, y: y1 }, i, a) => {
+                        const { x: x2, y: y2 } = a[(i + 1) % a.length]; // Last point wraps around to first
+                        return {
+                            end1: { x: Math.min(x1, x2), y: Math.min(y1, y2) }, // Sort based on the non-matching
+                            end2: { x: Math.max(x1, x2), y: Math.max(y1, y2) }, // coordinate: x or y
+                            type: x1 === x2 ? 'v' : 'h'
+                        };
+                    });
 
-                info.innerHTML = `Points: ${points.length}<br>
-                    X range: ${minX} - ${maxX}<br>
-                    Y range: ${minY} - ${maxY}`;
+                // Allocate each wall to the Y-indices it appears on
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                const ys = [];
+                walls.forEach((wall, i, a) => {
+                    minX = Math.min(minX, wall.end1.x, wall.end2.x);
+                    maxX = Math.max(minX, wall.end1.x, wall.end2.x);
+                    minY = Math.min(minY, wall.end1.y, wall.end2.y);
+                    maxY = Math.max(maxY, wall.end1.y, wall.end2.y);
+                    if (wall.type === 'h') {
+                        (ys[wall.end1.y] ??= []).push(wall);
+                    } else {
+                        for (let y = wall.end1.y + 1; y < wall.end2.y; y++) {
+                            (ys[y] ??= []).push(wall);
+                        }
+                    }
+                    wall.prev = a.at(i - 1);
+                    wall.next = a[(i + 1) % a.length];
+                });
+
+                const outsides = [];
+                ys.forEach((walls, y) => {
+                    walls.sort((a, b) => a.end1.x - b.end1.x); // Sort left to right
+                    let x = minX;
+                    let outside = true;
+                    for (let wall of walls) {
+                        const plateau = wall.type === 'h' && (
+                            (wall.prev?.end1.y === wall.end1.y && wall.next?.end1.y === wall.end1.y) || // Negative plateau
+                            (wall.prev?.end2.y === wall.end1.y && wall.next?.end2.y === wall.end1.y)    // Positive plateau
+                        );
+                        if (outside) {
+                            (outsides[y] ??= []).push([x, wall.end1.x - 1]);
+                        }
+                        x = wall.end2.x + 1;
+                        outside = plateau
+                            ? outside   // Plateaus don't change the inside/outside status
+                            : !outside;
+                    }
+                    if (outside) {
+                        (outsides[y] ??= []).push([x, maxX]);
+                    }
+                });
+
+                // Function to convert canvas coordinates back to world coordinates
+                window.toWorld = function (canvasX, canvasY) {
+                    const x = ((canvasX - panX) / zoom - offsetX) / scale + minX;
+                    const y = ((canvasY - panY) / zoom - offsetY) / scale + minY;
+                    return { x, y };
+                };
 
                 // Scale to fit canvas with padding
                 const padding = 40;
@@ -75,125 +129,132 @@
                 const scaleY = (canvas.height - 2 * padding) / (maxY - minY);
                 const scale = Math.min(scaleX, scaleY);
 
+                // Center the content in the available space
+                const scaledWidth = (maxX - minX) * scale;
+                const scaledHeight = (maxY - minY) * scale;
+                const offsetX = (canvas.width - scaledWidth) / 2;
+                const offsetY = (canvas.height - scaledHeight) / 2;
+
                 function toCanvas(p) {
                     return {
-                        x: (p.x - minX) * scale + padding,
-                        y: (p.y - minY) * scale + padding
+                        x: (p.x - minX) * scale + offsetX,
+                        y: (p.y - minY) * scale + offsetY
                     };
                 }
 
-                // Build neighbor maps
-                const byX = new Map(); // Map from x coord to points with that x
-                const byY = new Map(); // Map from y coord to points with that y
+                // Initial info display
+                info.innerHTML = 'Move mouse over canvas to see coordinates';
 
-                points.forEach(p => {
-                    if (!byX.has(p.x)) byX.set(p.x, []);
-                    byX.get(p.x).push(p);
+                // Store drawing functions for redraw with zoom/pan
+                window.redraw = function () {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.save();
+                    ctx.translate(panX, panY);
+                    ctx.scale(zoom, zoom);
 
-                    if (!byY.has(p.y)) byY.set(p.y, []);
-                    byY.get(p.y).push(p);
-                });
+                    // Draw connections
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 1 / zoom;
 
-                // Draw connections
-                ctx.strokeStyle = '#0088ff';
-                ctx.lineWidth = 1;
+                    walls.forEach(wall => {
+                        const p1 = toCanvas(wall.end1);
+                        const p2 = toCanvas(wall.end2);
+                        ctx.beginPath();
+                        ctx.moveTo(p1.x, p1.y);
+                        ctx.lineTo(p2.x, p2.y);
+                        ctx.stroke();
+                    });
 
-                const connections = new Set();
+                    // Draw points
+                    ctx.fillStyle = '#ff0000';
+                    points.forEach(point => {
+                        const cp = toCanvas(point);
+                        ctx.beginPath();
+                        ctx.arc(cp.x, cp.y, 2 / zoom, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
 
-                points.forEach(p => {
-                    // Find neighbor with same x (different y)
-                    const sameX = byX.get(p.x).filter(other => other !== p);
-                    if (sameX.length > 0) {
-                        // Find closest neighbor
-                        const neighbor = sameX.reduce((closest, other) => {
-                            const distOther = Math.abs(other.y - p.y);
-                            const distClosest = Math.abs(closest.y - p.y);
-                            return distOther < distClosest ? other : closest;
-                        });
-
-                        const key = `${Math.min(p.x, neighbor.x)},${Math.min(p.y, neighbor.y)}-${Math.max(p.x, neighbor.x)},${Math.max(p.y, neighbor.y)}`;
-                        if (!connections.has(key)) {
-                            connections.add(key);
-                            const p1 = toCanvas(p);
-                            const p2 = toCanvas(neighbor);
+                    // Draw outside
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1 / zoom;
+                    outsides.forEach((ranges, y) => {
+                        ranges.forEach(([x1, x2]) => {
+                            const p1 = toCanvas({ x: x1, y });
+                            const p2 = toCanvas({ x: x2, y });
                             ctx.beginPath();
                             ctx.moveTo(p1.x, p1.y);
                             ctx.lineTo(p2.x, p2.y);
                             ctx.stroke();
-                        }
-                    }
-
-                    // Find neighbor with same y (different x)
-                    const sameY = byY.get(p.y).filter(other => other !== p);
-                    if (sameY.length > 0) {
-                        // Find closest neighbor
-                        const neighbor = sameY.reduce((closest, other) => {
-                            const distOther = Math.abs(other.x - p.x);
-                            const distClosest = Math.abs(closest.x - p.x);
-                            return distOther < distClosest ? other : closest;
                         });
+                    });
 
-                        const key = `${Math.min(p.x, neighbor.x)},${Math.min(p.y, neighbor.y)}-${Math.max(p.x, neighbor.x)},${Math.max(p.y, neighbor.y)}`;
-                        if (!connections.has(key)) {
-                            connections.add(key);
-                            const p1 = toCanvas(p);
-                            const p2 = toCanvas(neighbor);
-                            ctx.beginPath();
-                            ctx.moveTo(p1.x, p1.y);
-                            ctx.lineTo(p2.x, p2.y);
-                            ctx.stroke();
-                        }
-                    }
-                });
+                    ctx.restore();
+                };
 
-                // Draw points
-                ctx.fillStyle = '#ff4444';
-                points.forEach(p => {
-                    const cp = toCanvas(p);
-                    ctx.beginPath();
-                    ctx.arc(cp.x, cp.y, 2, 0, Math.PI * 2);
-                    ctx.fill();
-                });
-
-                // Draw areas
-                ctx.strokeStyle = '#3bb143';
-
-                // Floor
-                let p1 = toCanvas({ x: 94817, y: 50191 });
-                p2 = toCanvas({ x: 94817, y: 68749 });
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-
-                p1 = p2;
-                p2 = toCanvas({ x: 5786, y: 68749 });
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-
-                p1 = p2;
-                p2 = toCanvas({ x: 5786, y: 50191 });
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-
-                p1 = p2;
-                p2 = toCanvas({ x: 94817, y: 50191 });
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-
-                info.innerHTML += `<br>Connections drawn: ${connections.size}`;
+                window.redraw();
 
             } catch (error) {
                 info.innerHTML = `Error: ${error.message}`;
                 console.error(error);
             }
         }
+
+        // Zoom with mouse wheel
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Use smaller zoom factor and normalize deltaY for smoother zooming
+            const delta = Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 100);
+            const zoomFactor = 1 - delta * 0.001;
+            const newZoom = Math.max(0.1, Math.min(10, zoom * zoomFactor));
+
+            // Zoom towards mouse position
+            panX = mouseX - (mouseX - panX) * (newZoom / zoom);
+            panY = mouseY - (mouseY - panY) * (newZoom / zoom);
+            zoom = newZoom;
+
+            if (window.redraw) window.redraw();
+        });
+
+        // Pan with mouse drag
+        canvas.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            startX = e.clientX - panX;
+            startY = e.clientY - panY;
+            canvas.style.cursor = 'grabbing';
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isPanning) {
+                panX = e.clientX - startX;
+                panY = e.clientY - startY;
+                if (window.redraw) window.redraw();
+            }
+
+            // Update position display
+            if (window.toWorld) {
+                const rect = canvas.getBoundingClientRect();
+                const canvasX = e.clientX - rect.left;
+                const canvasY = e.clientY - rect.top;
+                const world = window.toWorld(canvasX, canvasY);
+                info.innerHTML = `x: ${Math.round(world.x)}, y: ${Math.round(world.y)} | zoom: ${zoom.toFixed(2)}x`;
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            isPanning = false;
+            canvas.style.cursor = 'grab';
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            isPanning = false;
+            canvas.style.cursor = 'default';
+        });
+
+        canvas.style.cursor = 'grab';
 
         loadAndVisualize();
     </script>
